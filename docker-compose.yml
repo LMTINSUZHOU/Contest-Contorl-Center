@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: contest-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: contest
+      POSTGRES_USER: contest
+      POSTGRES_PASSWORD: contest
+      TZ: Asia/Shanghai
+    ports:
+      - "5432:5432"
+    volumes:
+      - contest-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U contest -d contest"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  contest-postgres-data:

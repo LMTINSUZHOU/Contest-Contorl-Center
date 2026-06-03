@@ -1,0 +1,110 @@
+erDiagram
+    USERS ||--o| STUDENT_PROFILES : owns
+    USERS ||--o| TEACHER_PROFILES : owns
+    USERS ||--o{ REVIEW_LOGS : reviews
+    USERS ||--o{ IMPORT_JOBS : imports
+    USERS ||--o{ CERTIFICATE_FILES : uploads
+
+    COMPETITIONS ||--o{ COMPETITION_TRACKS : has
+
+    STUDENT_PROFILES ||--o{ TEAM_MEMBERS : joins
+    TEAMS ||--o{ TEAM_MEMBERS : has
+    STUDENT_PROFILES ||--o{ TEAMS : captains
+
+    COMPETITIONS ||--o{ AWARDS : awards
+    COMPETITION_TRACKS ||--o{ AWARDS : classifies
+    STUDENT_PROFILES ||--o{ AWARDS : wins
+    TEACHER_PROFILES ||--o{ AWARDS : wins
+    TEAMS ||--o{ AWARDS : wins
+
+    AWARDS ||--o{ AWARD_ADVISORS : has
+    TEACHER_PROFILES ||--o{ AWARD_ADVISORS : guides
+    AWARDS ||--o{ CERTIFICATE_FILES : stores
+
+    IMPORT_JOBS ||--o{ IMPORT_ERROR_ROWS : reports
+
+    USERS {
+        uuid id PK
+        varchar email UK
+        varchar password_hash
+        varchar role
+        varchar status
+        text review_reason
+    }
+
+    STUDENT_PROFILES {
+        uuid id PK
+        uuid user_id FK
+        varchar student_no UK
+        varchar name
+        varchar college
+        varchar major
+        varchar class_name
+        varchar grade
+    }
+
+    TEACHER_PROFILES {
+        uuid id PK
+        uuid user_id FK
+        varchar teacher_no UK
+        varchar name
+        varchar college
+        varchar title
+    }
+
+    COMPETITIONS {
+        uuid id PK
+        varchar name UK
+        varchar default_grade
+        varchar organizer
+        boolean enabled
+    }
+
+    COMPETITION_TRACKS {
+        uuid id PK
+        uuid competition_id FK
+        varchar name
+    }
+
+    TEAMS {
+        uuid id PK
+        varchar name
+        uuid captain_student_id FK
+    }
+
+    TEAM_MEMBERS {
+        uuid id PK
+        uuid team_id FK
+        uuid student_id FK
+        boolean captain
+    }
+
+    AWARDS {
+        uuid id PK
+        uuid competition_id FK
+        uuid track_id FK
+        varchar competition_alias
+        varchar competition_grade
+        varchar award_level
+        varchar subject_type
+        int award_year
+        date award_date
+        varchar award_location
+        varchar audit_status
+    }
+
+    AWARD_ADVISORS {
+        uuid id PK
+        uuid award_id FK
+        uuid teacher_id FK
+    }
+
+    CERTIFICATE_FILES {
+        uuid id PK
+        uuid award_id FK
+        varchar original_name
+        varchar storage_path
+        varchar content_type
+        bigint file_size
+        boolean active
+    }

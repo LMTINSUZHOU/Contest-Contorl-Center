@@ -1,0 +1,5 @@
+ALTER TABLE awards
+    ADD COLUMN IF NOT EXISTS competition_alias VARCHAR(180);
+
+ALTER TABLE awards
+    ADD COLUMN IF NOT EXISTS award_location VARCHAR(160);
