@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -40,6 +40,7 @@ type AwardView = {
   certificateId?: string;
 };
 type Entity = Record<string, any>;
+type SelectOption = { value: string; label: string; keywords?: string };
 
 function token() {
   return localStorage.getItem('contest-token');
@@ -280,7 +281,13 @@ function ProfileManager({ type }: { type: 'students' | 'teachers' }) {
       <div>
         {message && <p className="message">{message}</p>}
         <form className="panel inline-form" onSubmit={resetPassword}>
-          <SelectInput label={isStudent ? '学生' : '教师'} value={resetForm.profileId} options={rows.map(row => ({ value: row.id, label: `${row.name}(${isStudent ? row.studentNo : row.teacherNo})` }))} onChange={profileId => setResetForm({ ...resetForm, profileId })} />
+          <SelectInput
+            label={isStudent ? '学生' : '教师'}
+            value={resetForm.profileId}
+            searchable
+            options={rows.map(row => ({ value: row.id, label: `${row.name}(${isStudent ? row.studentNo : row.teacherNo})`, keywords: `${row.name} ${isStudent ? row.studentNo : row.teacherNo}` }))}
+            onChange={profileId => setResetForm({ ...resetForm, profileId })}
+          />
           <TextInput label="新密码" type="password" value={resetForm.password} onChange={password => setResetForm({ ...resetForm, password })} />
           <button>重置密码</button>
         </form>
@@ -297,6 +304,8 @@ function CompetitionManager() {
   const [trackForm, setTrackForm] = useState<Entity>({});
   const [editingCompetitionId, setEditingCompetitionId] = useState<string | null>(null);
   const [editingTrackId, setEditingTrackId] = useState<string | null>(null);
+  const [competitionFormOpen, setCompetitionFormOpen] = useState(false);
+  const [trackFormOpen, setTrackFormOpen] = useState(false);
   const load = () => {
     api<Entity[]>('/api/admin/competitions').then(setCompetitions);
     api<Entity[]>('/api/admin/competition-tracks').then(setTracks);
@@ -310,6 +319,7 @@ function CompetitionManager() {
     });
     setCompetitionForm({ defaultGrade: 'OTHER', enabled: true });
     setEditingCompetitionId(null);
+    setCompetitionFormOpen(false);
     load();
   };
   const saveTrack = async (event: FormEvent) => {
@@ -320,37 +330,69 @@ function CompetitionManager() {
     });
     setTrackForm({});
     setEditingTrackId(null);
+    setTrackFormOpen(false);
     load();
   };
   const remove = async (path: string) => {
     await api(path, { method: 'DELETE' });
     load();
   };
+  const openCompetitionForm = (row?: Entity) => {
+    setEditingCompetitionId(row?.id ?? null);
+    setCompetitionForm(row ? { ...row } : { defaultGrade: 'OTHER', enabled: true });
+    setCompetitionFormOpen(true);
+  };
+  const openTrackForm = (row?: Entity) => {
+    setEditingTrackId(row?.id ?? null);
+    setTrackForm(row ? { ...row } : {});
+    setTrackFormOpen(true);
+  };
+  const closeCompetitionForm = () => {
+    setEditingCompetitionId(null);
+    setCompetitionForm({ defaultGrade: 'OTHER', enabled: true });
+    setCompetitionFormOpen(false);
+  };
+  const closeTrackForm = () => {
+    setEditingTrackId(null);
+    setTrackForm({});
+    setTrackFormOpen(false);
+  };
   return (
     <section>
-      <form className="panel inline-form" onSubmit={saveCompetition}>
-        <TextInput label="竞赛名称" value={competitionForm.name} onChange={name => setCompetitionForm({ ...competitionForm, name })} />
-        <SelectInput label="等级" value={competitionForm.defaultGrade} options={gradeOptions()} onChange={defaultGrade => setCompetitionForm({ ...competitionForm, defaultGrade })} />
-        <TextInput label="主办单位" value={competitionForm.organizer} onChange={organizer => setCompetitionForm({ ...competitionForm, organizer })} />
-        <button className="primary">{editingCompetitionId ? '保存竞赛' : '新增竞赛'}</button>
-        {editingCompetitionId && <button type="button" onClick={() => { setEditingCompetitionId(null); setCompetitionForm({ defaultGrade: 'OTHER', enabled: true }); }}>取消编辑</button>}
-      </form>
-      <form className="panel inline-form" onSubmit={saveTrack}>
-        <h2>维护赛道</h2>
-        <SelectInput label="所属竞赛" value={trackForm.competitionId} options={competitions.map(c => ({ value: c.id, label: c.name }))} onChange={competitionId => setTrackForm({ ...trackForm, competitionId })} />
-        <TextInput label="赛道名称" value={trackForm.name} onChange={name => setTrackForm({ ...trackForm, name })} />
-        <button className="primary">{editingTrackId ? '保存赛道' : '新增赛道'}</button>
-        {editingTrackId && <button type="button" onClick={() => { setEditingTrackId(null); setTrackForm({}); }}>取消编辑</button>}
-      </form>
+      <div className="panel button-row">
+        <button type="button" className="primary" onClick={() => openCompetitionForm()}>新增竞赛</button>
+        <button type="button" onClick={() => openTrackForm()}>新增赛道</button>
+      </div>
+      <Modal title={editingCompetitionId ? '编辑竞赛' : '新增竞赛'} open={competitionFormOpen} onClose={closeCompetitionForm}>
+        <form className="inline-form modal-form" onSubmit={saveCompetition}>
+          <TextInput label="竞赛名称" value={competitionForm.name} onChange={name => setCompetitionForm({ ...competitionForm, name })} />
+          <SelectInput label="等级" value={competitionForm.defaultGrade} options={gradeOptions()} onChange={defaultGrade => setCompetitionForm({ ...competitionForm, defaultGrade })} />
+          <TextInput label="主办单位" value={competitionForm.organizer} onChange={organizer => setCompetitionForm({ ...competitionForm, organizer })} />
+          <div className="form-actions">
+            <button className="primary">{editingCompetitionId ? '保存竞赛' : '新增竞赛'}</button>
+            <button type="button" onClick={closeCompetitionForm}>取消</button>
+          </div>
+        </form>
+      </Modal>
+      <Modal title={editingTrackId ? '编辑赛道' : '新增赛道'} open={trackFormOpen} onClose={closeTrackForm}>
+        <form className="inline-form modal-form" onSubmit={saveTrack}>
+          <SelectInput label="所属竞赛" value={trackForm.competitionId} searchable options={competitions.map(c => ({ value: c.id, label: c.name, keywords: c.name }))} onChange={competitionId => setTrackForm({ ...trackForm, competitionId })} />
+          <TextInput label="赛道名称" value={trackForm.name} onChange={name => setTrackForm({ ...trackForm, name })} />
+          <div className="form-actions">
+            <button className="primary">{editingTrackId ? '保存赛道' : '新增赛道'}</button>
+            <button type="button" onClick={closeTrackForm}>取消</button>
+          </div>
+        </form>
+      </Modal>
       <SimpleTable rows={competitions} title="竞赛" actions={row => (
         <>
-          <button onClick={() => { setEditingCompetitionId(row.id); setCompetitionForm({ ...row }); }}>编辑</button>
+          <button onClick={() => openCompetitionForm(row)}>编辑</button>
           <button className="danger" onClick={() => remove(`/api/admin/competitions/${row.id}`)}>删除</button>
         </>
       )} />
       <SimpleTable rows={tracks} title="赛道" actions={row => (
         <>
-          <button onClick={() => { setEditingTrackId(row.id); setTrackForm({ ...row }); }}>编辑</button>
+          <button onClick={() => openTrackForm(row)}>编辑</button>
           <button className="danger" onClick={() => remove(`/api/admin/competition-tracks/${row.id}`)}>删除</button>
         </>
       )} />
@@ -362,6 +404,7 @@ function TeamManager() {
   const [teams, setTeams] = useState<Entity[]>([]);
   const [students, setStudents] = useState<Entity[]>([]);
   const [form, setForm] = useState<Entity>({});
+  const [formOpen, setFormOpen] = useState(false);
   const load = () => {
     api<Entity[]>('/api/admin/teams').then(setTeams);
     api<Entity[]>('/api/admin/students').then(setStudents);
@@ -374,17 +417,29 @@ function TeamManager() {
       body: JSON.stringify({ ...form, memberStudentIds: form.memberStudentIds || [] })
     });
     setForm({});
+    setFormOpen(false);
     load();
   };
+  const closeForm = () => {
+    setForm({});
+    setFormOpen(false);
+  };
   return (
-    <section className="two-column">
-      <form className="panel form-grid" onSubmit={save}>
-        <h2>新增团队</h2>
-        <TextInput label="团队名称" value={form.name} onChange={name => setForm({ ...form, name })} />
-        <SelectInput label="队长" value={form.captainStudentId} options={students.map(s => ({ value: s.id, label: `${s.name}(${s.studentNo})` }))} onChange={captainStudentId => setForm({ ...form, captainStudentId })} />
-        <MultiSelect label="团队成员" value={form.memberStudentIds || []} options={students.map(s => ({ value: s.id, label: `${s.name}(${s.studentNo})` }))} onChange={memberStudentIds => setForm({ ...form, memberStudentIds })} />
-        <button className="primary">保存</button>
-      </form>
+    <section>
+      <div className="panel button-row">
+        <button type="button" className="primary" onClick={() => setFormOpen(true)}>新增团队</button>
+      </div>
+      <Modal title="新增团队" open={formOpen} onClose={closeForm}>
+        <form className="form-grid modal-form" onSubmit={save}>
+          <TextInput label="团队名称" value={form.name} onChange={name => setForm({ ...form, name })} />
+          <SelectInput label="队长" value={form.captainStudentId} searchable options={students.map(s => ({ value: s.id, label: `${s.name}(${s.studentNo})`, keywords: `${s.name} ${s.studentNo}` }))} onChange={captainStudentId => setForm({ ...form, captainStudentId })} />
+          <MultiSelect label="团队成员" value={form.memberStudentIds || []} searchable options={students.map(s => ({ value: s.id, label: `${s.name}(${s.studentNo})`, keywords: `${s.name} ${s.studentNo}` }))} onChange={memberStudentIds => setForm({ ...form, memberStudentIds })} />
+          <div className="form-actions">
+            <button className="primary">保存</button>
+            <button type="button" onClick={closeForm}>取消</button>
+          </div>
+        </form>
+      </Modal>
       <SimpleTable rows={teams} />
     </section>
   );
@@ -399,6 +454,7 @@ function AwardManager() {
   const [teams, setTeams] = useState<Entity[]>([]);
   const [form, setForm] = useState<Entity>({ subjectType: 'STUDENT', awardLevel: 'FIRST_PRIZE' });
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
   const [message, setMessage] = useState('');
   const load = () => {
     api<AwardView[]>('/api/admin/awards').then(setAwards);
@@ -424,6 +480,7 @@ function AwardManager() {
     setForm({ subjectType: 'STUDENT', awardLevel: 'FIRST_PRIZE' });
     setEditingId(null);
     setTracks([]);
+    setFormOpen(false);
     load();
   };
   const editAward = (row: AwardView) => {
@@ -441,6 +498,7 @@ function AwardManager() {
       advisorTeacherIds: row.advisorTeacherIds || []
     });
     loadTracks(row.competitionId);
+    setFormOpen(true);
   };
   const deleteAward = async (id: string) => {
     await api(`/api/admin/awards/${id}`, { method: 'DELETE' });
@@ -448,6 +506,7 @@ function AwardManager() {
     if (editingId === id) {
       setEditingId(null);
       setForm({ subjectType: 'STUDENT', awardLevel: 'FIRST_PRIZE' });
+      setFormOpen(false);
     }
     load();
   };
@@ -463,24 +522,43 @@ function AwardManager() {
     setMessage('证书已导入');
     load();
   };
+  const openCreateForm = () => {
+    setEditingId(null);
+    setForm({ subjectType: 'STUDENT', awardLevel: 'FIRST_PRIZE' });
+    setTracks([]);
+    setFormOpen(true);
+  };
+  const closeForm = () => {
+    setEditingId(null);
+    setForm({ subjectType: 'STUDENT', awardLevel: 'FIRST_PRIZE' });
+    setTracks([]);
+    setFormOpen(false);
+  };
   return (
     <section>
       {message && <p className="message">{message}</p>}
-      <form className="panel inline-form" onSubmit={save}>
-        <SelectInput label="竞赛" value={form.competitionId} options={competitions.map(c => ({ value: c.id, label: c.name }))} onChange={competitionId => { setForm({ ...form, competitionId, trackId: null }); loadTracks(competitionId); }} />
-        <SelectInput label="赛道" value={form.trackId} options={tracks.map(track => ({ value: track.id, label: track.name }))} onChange={trackId => setForm({ ...form, trackId })} />
-        <TextInput label="竞赛别名" value={form.competitionAlias} onChange={competitionAlias => setForm({ ...form, competitionAlias })} />
-        <SelectInput label="主体" value={form.subjectType} options={subjectOptions()} onChange={subjectType => setForm({ ...form, subjectType, primaryStudentId: null, teamId: null })} />
-        <SelectInput label="获奖等级" value={form.awardLevel} options={awardOptions()} onChange={awardLevel => setForm({ ...form, awardLevel })} />
-        {form.subjectType === 'TEAM'
-          ? <SelectInput label="团队" value={form.teamId} options={teams.map(t => ({ value: t.id, label: t.name }))} onChange={teamId => setForm({ ...form, teamId })} />
-          : <SelectInput label="学生" value={form.primaryStudentId} options={students.map(s => ({ value: s.id, label: `${s.name}(${s.studentNo})` }))} onChange={primaryStudentId => setForm({ ...form, primaryStudentId })} />}
-        <MultiSelect label="指导老师" value={form.advisorTeacherIds || []} options={teachers.map(t => ({ value: t.id, label: `${t.name}(${t.teacherNo})` }))} onChange={advisorTeacherIds => setForm({ ...form, advisorTeacherIds })} />
-        <TextInput label="获奖日期" type="date" value={form.awardDate} onChange={awardDate => setForm({ ...form, awardDate })} />
-        <TextInput label="获奖地点" value={form.awardLocation} onChange={awardLocation => setForm({ ...form, awardLocation })} />
-        <button className="primary">{editingId ? '保存修改' : '录入获奖'}</button>
-        {editingId && <button type="button" onClick={() => { setEditingId(null); setForm({ subjectType: 'STUDENT', awardLevel: 'FIRST_PRIZE' }); }}>取消编辑</button>}
-      </form>
+      <div className="panel button-row">
+        <button type="button" className="primary" onClick={openCreateForm}>录入获奖</button>
+      </div>
+      <Modal title={editingId ? '编辑获奖' : '录入获奖'} open={formOpen} onClose={closeForm}>
+        <form className="inline-form modal-form" onSubmit={save}>
+          <SelectInput label="竞赛" value={form.competitionId} searchable options={competitions.map(c => ({ value: c.id, label: c.name, keywords: c.name }))} onChange={competitionId => { setForm({ ...form, competitionId, trackId: null }); loadTracks(competitionId); }} />
+          <SelectInput label="赛道" value={form.trackId} searchable options={tracks.map(track => ({ value: track.id, label: track.name, keywords: track.name }))} onChange={trackId => setForm({ ...form, trackId })} />
+          <TextInput label="竞赛别名" value={form.competitionAlias} onChange={competitionAlias => setForm({ ...form, competitionAlias })} />
+          <SelectInput label="主体" value={form.subjectType} options={subjectOptions()} onChange={subjectType => setForm({ ...form, subjectType, primaryStudentId: null, teamId: null })} />
+          <SelectInput label="获奖等级" value={form.awardLevel} options={awardOptions()} onChange={awardLevel => setForm({ ...form, awardLevel })} />
+          {form.subjectType === 'TEAM'
+            ? <SelectInput label="团队" value={form.teamId} searchable options={teams.map(t => ({ value: t.id, label: t.name, keywords: t.name }))} onChange={teamId => setForm({ ...form, teamId })} />
+            : <SelectInput label="学生" value={form.primaryStudentId} searchable options={students.map(s => ({ value: s.id, label: `${s.name}(${s.studentNo})`, keywords: `${s.name} ${s.studentNo}` }))} onChange={primaryStudentId => setForm({ ...form, primaryStudentId })} />}
+          <MultiSelect label="指导老师" value={form.advisorTeacherIds || []} searchable options={teachers.map(t => ({ value: t.id, label: `${t.name}(${t.teacherNo})`, keywords: `${t.name} ${t.teacherNo}` }))} onChange={advisorTeacherIds => setForm({ ...form, advisorTeacherIds })} />
+          <TextInput label="获奖日期" type="date" value={form.awardDate} onChange={awardDate => setForm({ ...form, awardDate })} />
+          <TextInput label="获奖地点" value={form.awardLocation} onChange={awardLocation => setForm({ ...form, awardLocation })} />
+          <div className="form-actions">
+            <button className="primary">{editingId ? '保存修改' : '录入获奖'}</button>
+            <button type="button" onClick={closeForm}>取消</button>
+          </div>
+        </form>
+      </Modal>
       <AwardTable rows={awards} onCertificateUpload={uploadCertificate} actions={row => (
         <>
           <button onClick={() => editAward(row)}>编辑</button>
@@ -527,6 +605,7 @@ function StudentWorkspace() {
   const [teams, setTeams] = useState<Entity[]>([]);
   const [form, setForm] = useState<Entity>({ awardLevel: 'FIRST_PRIZE', teamAward: false });
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
   const [message, setMessage] = useState('');
   const load = () => {
     api<Entity>('/api/student/profile').then(setProfile);
@@ -553,6 +632,7 @@ function StudentWorkspace() {
     setForm({ awardLevel: 'FIRST_PRIZE', teamAward: false });
     setEditingId(null);
     setTracks([]);
+    setFormOpen(false);
     setMessage(editingId ? '更新已提交，等待审核' : '申报已提交，等待审核');
     load();
   };
@@ -570,6 +650,7 @@ function StudentWorkspace() {
       advisorTeacherIds: row.advisorTeacherIds || []
     });
     loadTracks(row.competitionId);
+    setFormOpen(true);
   };
   const deleteDeclaration = async (id: string) => {
     await api(`/api/student/award-declarations/${id}`, { method: 'DELETE' });
@@ -577,26 +658,46 @@ function StudentWorkspace() {
     if (editingId === id) {
       setEditingId(null);
       setForm({ awardLevel: 'FIRST_PRIZE', teamAward: false });
+      setFormOpen(false);
     }
     load();
+  };
+  const openCreateForm = () => {
+    setEditingId(null);
+    setForm({ awardLevel: 'FIRST_PRIZE', teamAward: false });
+    setTracks([]);
+    setFormOpen(true);
+  };
+  const closeForm = () => {
+    setEditingId(null);
+    setForm({ awardLevel: 'FIRST_PRIZE', teamAward: false });
+    setTracks([]);
+    setFormOpen(false);
   };
   return (
     <>
       <Header title="学生主页" />
       {message && <p className="message">{message}</p>}
       <section className="panel"><strong>{profile?.name}</strong> {profile?.studentNo} {profile?.college} {profile?.major}</section>
-      <form className="panel inline-form" onSubmit={submit}>
-        <SelectInput label="竞赛" value={form.competitionId} options={competitions.map(c => ({ value: c.id, label: c.name }))} onChange={competitionId => { setForm({ ...form, competitionId, trackId: null }); loadTracks(competitionId); }} />
-        <SelectInput label="赛道" value={form.trackId} options={tracks.map(track => ({ value: track.id, label: track.name }))} onChange={trackId => setForm({ ...form, trackId })} />
-        <TextInput label="竞赛别名" value={form.competitionAlias} onChange={competitionAlias => setForm({ ...form, competitionAlias })} />
-        <SelectInput label="获奖等级" value={form.awardLevel} options={awardOptions()} onChange={awardLevel => setForm({ ...form, awardLevel })} />
-        <SelectInput label="团队" value={form.teamId} options={[{ value: '', label: '个人赛' }, ...teams.map(t => ({ value: t.id, label: t.name }))]} onChange={teamId => setForm({ ...form, teamId: teamId || null, teamAward: Boolean(teamId) })} />
-        <MultiSelect label="指导老师" value={form.advisorTeacherIds || []} options={teachers.map(t => ({ value: t.id, label: `${t.name}(${t.teacherNo})` }))} onChange={advisorTeacherIds => setForm({ ...form, advisorTeacherIds })} />
-        <TextInput label="获奖日期" type="date" value={form.awardDate} onChange={awardDate => setForm({ ...form, awardDate })} />
-        <TextInput label="获奖地点" value={form.awardLocation} onChange={awardLocation => setForm({ ...form, awardLocation })} />
-        <button className="primary">{editingId ? '提交修改' : '提交申报'}</button>
-        {editingId && <button type="button" onClick={() => { setEditingId(null); setForm({ awardLevel: 'FIRST_PRIZE', teamAward: false }); }}>取消编辑</button>}
-      </form>
+      <section className="panel button-row">
+        <button type="button" className="primary" onClick={openCreateForm}>提交获奖申报</button>
+      </section>
+      <Modal title={editingId ? '编辑申报' : '提交获奖申报'} open={formOpen} onClose={closeForm}>
+        <form className="inline-form modal-form" onSubmit={submit}>
+          <SelectInput label="竞赛" value={form.competitionId} searchable options={competitions.map(c => ({ value: c.id, label: c.name, keywords: c.name }))} onChange={competitionId => { setForm({ ...form, competitionId, trackId: null }); loadTracks(competitionId); }} />
+          <SelectInput label="赛道" value={form.trackId} searchable options={tracks.map(track => ({ value: track.id, label: track.name, keywords: track.name }))} onChange={trackId => setForm({ ...form, trackId })} />
+          <TextInput label="竞赛别名" value={form.competitionAlias} onChange={competitionAlias => setForm({ ...form, competitionAlias })} />
+          <SelectInput label="获奖等级" value={form.awardLevel} options={awardOptions()} onChange={awardLevel => setForm({ ...form, awardLevel })} />
+          <SelectInput label="团队" value={form.teamId} searchable options={[{ value: '', label: '个人赛', keywords: '个人赛' }, ...teams.map(t => ({ value: t.id, label: t.name, keywords: t.name }))]} onChange={teamId => setForm({ ...form, teamId: teamId || null, teamAward: Boolean(teamId) })} />
+          <MultiSelect label="指导老师" value={form.advisorTeacherIds || []} searchable options={teachers.map(t => ({ value: t.id, label: `${t.name}(${t.teacherNo})`, keywords: `${t.name} ${t.teacherNo}` }))} onChange={advisorTeacherIds => setForm({ ...form, advisorTeacherIds })} />
+          <TextInput label="获奖日期" type="date" value={form.awardDate} onChange={awardDate => setForm({ ...form, awardDate })} />
+          <TextInput label="获奖地点" value={form.awardLocation} onChange={awardLocation => setForm({ ...form, awardLocation })} />
+          <div className="form-actions">
+            <button className="primary">{editingId ? '提交修改' : '提交申报'}</button>
+            <button type="button" onClick={closeForm}>取消</button>
+          </div>
+        </form>
+      </Modal>
       <h2>历史获奖</h2>
       <AwardTable rows={awards} />
       <h2>申报/可维护记录</h2>
@@ -656,40 +757,154 @@ function TextInput({ label, value, onChange, type = 'text' }: { label: string; v
   return <label><span>{label}</span><input type={type} value={value ?? ''} onChange={event => onChange(event.target.value)} /></label>;
 }
 
-function SelectInput({ label, value, options, onChange }: { label: string; value?: any; options: { value: string; label: string }[]; onChange: (value: string) => void }) {
-  return <label><span>{label}</span><select value={value ?? ''} onChange={event => onChange(event.target.value)}><option value="">请选择</option>{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>;
+function SelectInput({ label, value, options, onChange, searchable = false }: { label: string; value?: any; options: SelectOption[]; onChange: (value: string) => void; searchable?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const normalizedValue = String(value ?? '');
+  const selected = options.find(option => option.value === normalizedValue);
+  const hasEmptyOption = options.some(option => option.value === '');
+  const canSearch = searchable || options.length > 8;
+  const filteredOptions = useMemo(() => filterOptions(options, query), [options, query]);
+
+  const choose = (nextValue: string) => {
+    onChange(nextValue);
+    setOpen(false);
+    setQuery('');
+  };
+
+  return (
+    <div className="select-field">
+      <span className="field-label">{label}</span>
+      <button type="button" className="select-trigger" aria-expanded={open} onClick={() => setOpen(current => !current)}>
+        <span className={selected ? '' : 'select-placeholder'}>{selected?.label ?? '请选择'}</span>
+        <span className="select-caret">v</span>
+      </button>
+      {open && (
+        <div className="select-menu">
+          {canSearch && <input className="select-search" placeholder="搜索" value={query} onChange={event => setQuery(event.target.value)} />}
+          {!hasEmptyOption && (
+            <label className={`select-option ${normalizedValue === '' ? 'selected' : ''}`}>
+              <input type="checkbox" checked={normalizedValue === ''} onChange={() => choose('')} />
+              <span>请选择</span>
+            </label>
+          )}
+          {filteredOptions.map(option => (
+            <label className={`select-option ${option.value === normalizedValue ? 'selected' : ''}`} key={option.value}>
+              <input type="checkbox" checked={option.value === normalizedValue} onChange={() => choose(option.value)} />
+              <span>{option.label}</span>
+            </label>
+          ))}
+          {filteredOptions.length === 0 && <div className="select-empty">无匹配选项</div>}
+        </div>
+      )}
+    </div>
+  );
 }
 
-function MultiSelect({ label, value, options, onChange }: { label: string; value: string[]; options: { value: string; label: string }[]; onChange: (value: string[]) => void }) {
+function MultiSelect({ label, value, options, onChange, searchable = false }: { label: string; value: string[]; options: SelectOption[]; onChange: (value: string[]) => void; searchable?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const selectedValues = new Set(value || []);
+  const selectedLabels = options.filter(option => selectedValues.has(option.value)).map(option => option.label);
+  const canSearch = searchable || options.length > 8;
+  const filteredOptions = useMemo(() => filterOptions(options, query), [options, query]);
+
+  const toggle = (optionValue: string) => {
+    const next = new Set(selectedValues);
+    if (next.has(optionValue)) {
+      next.delete(optionValue);
+    } else {
+      next.add(optionValue);
+    }
+    onChange(Array.from(next));
+  };
+
   return (
-    <label>
-      <span>{label}</span>
-      <select multiple value={value} onChange={event => onChange(Array.from(event.target.selectedOptions).map(option => option.value))}>
-        {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-      </select>
-    </label>
+    <div className="select-field">
+      <span className="field-label">{label}</span>
+      <button type="button" className="select-trigger" aria-expanded={open} onClick={() => setOpen(current => !current)}>
+        <span className={selectedLabels.length ? '' : 'select-placeholder'}>{selectedLabels.length ? selectedLabels.join('，') : '请选择'}</span>
+        <span className="select-caret">v</span>
+      </button>
+      {open && (
+        <div className="select-menu">
+          {canSearch && <input className="select-search" placeholder="搜索" value={query} onChange={event => setQuery(event.target.value)} />}
+          {value?.length > 0 && <button type="button" className="select-clear" onClick={() => onChange([])}>清空已选</button>}
+          {filteredOptions.map(option => (
+            <label className={`select-option ${selectedValues.has(option.value) ? 'selected' : ''}`} key={option.value}>
+              <input type="checkbox" checked={selectedValues.has(option.value)} onChange={() => toggle(option.value)} />
+              <span>{option.label}</span>
+            </label>
+          ))}
+          {filteredOptions.length === 0 && <div className="select-empty">无匹配选项</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function filterOptions(options: SelectOption[], query: string) {
+  const keyword = query.trim().toLowerCase();
+  if (!keyword) return options;
+  return options.filter(option => `${option.label} ${option.keywords ?? ''}`.toLowerCase().includes(keyword));
+}
+
+function filterTableRows<T extends object>(rows: T[], query: string) {
+  const keyword = query.trim().toLowerCase();
+  if (!keyword) return rows;
+  return rows.filter(row => Object.values(row as Record<string, unknown>).some(value => String(Array.isArray(value) ? value.join(' ') : value ?? '').toLowerCase().includes(keyword)));
+}
+
+function Modal({ title, open, onClose, children }: { title: string; open: boolean; onClose: () => void; children: ReactNode }) {
+  if (!open) return null;
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="modal-panel" role="dialog" aria-modal="true" aria-label={title}>
+        <div className="modal-header">
+          <h2>{title}</h2>
+          <button type="button" className="ghost" onClick={onClose}>关闭</button>
+        </div>
+        {children}
+      </section>
+    </div>
   );
 }
 
 function SimpleTable({ rows, title, actions }: { rows: Entity[]; title?: string; actions?: (row: any) => any }) {
+  const [query, setQuery] = useState('');
+  const filteredRows = useMemo(() => filterTableRows(rows, query), [rows, query]);
   const columns = useMemo(() => Object.keys(rows[0] ?? {}).filter(key => typeof rows[0]?.[key] !== 'object').slice(0, 8), [rows]);
   return (
     <div className="table-wrap">
       {title && <h3>{title}</h3>}
+      {rows.length > 0 && (
+        <div className="table-toolbar">
+          <input className="table-search" placeholder={`搜索${title ?? '当前列表'}`} value={query} onChange={event => setQuery(event.target.value)} />
+          <span>{filteredRows.length}/{rows.length}</span>
+        </div>
+      )}
       <table>
         <thead><tr>{columns.map(column => <th key={column}>{labelOf(column)}</th>)}{actions && <th>操作</th>}</tr></thead>
-        <tbody>{rows.map((row, index) => <tr key={row.id ?? index}>{columns.map(column => <td key={column}>{String(row[column] ?? '')}</td>)}{actions && <td>{actions(row)}</td>}</tr>)}</tbody>
+        <tbody>{filteredRows.map((row, index) => <tr key={row.id ?? index}>{columns.map(column => <td key={column}>{String(row[column] ?? '')}</td>)}{actions && <td>{actions(row)}</td>}</tr>)}</tbody>
       </table>
     </div>
   );
 }
 
 function AwardTable({ rows, actions, onCertificateUpload }: { rows: AwardView[]; actions?: (row: AwardView) => any; onCertificateUpload?: (awardId: string, file?: File) => void }) {
+  const [query, setQuery] = useState('');
+  const filteredRows = useMemo(() => filterTableRows(rows, query), [rows, query]);
   return (
     <div className="table-wrap">
+      {rows.length > 0 && (
+        <div className="table-toolbar">
+          <input className="table-search" placeholder="搜索获奖、团队、学生、教师" value={query} onChange={event => setQuery(event.target.value)} />
+          <span>{filteredRows.length}/{rows.length}</span>
+        </div>
+      )}
       <table>
         <thead><tr><th>竞赛</th><th>赛道</th><th>别名</th><th>等级</th><th>奖项</th><th>主体</th><th>获奖人/团队</th><th>日期</th><th>地点</th><th>审核</th><th>证书</th>{actions && <th>操作</th>}</tr></thead>
-        <tbody>{rows.map(row => <tr key={row.id}>
+        <tbody>{filteredRows.map(row => <tr key={row.id}>
           <td>{row.competitionName}</td><td>{row.trackName}</td><td>{row.competitionAlias || ''}</td><td>{row.competitionGradeLabel}</td><td>{row.awardLevelLabel}</td><td>{row.subjectTypeLabel}</td>
           <td>{row.studentName || row.teacherName || row.teamName}</td><td>{row.awardDate || ''}</td><td>{row.awardLocation || ''}</td><td>{row.auditStatusLabel}</td>
           <td>
