@@ -52,11 +52,25 @@ public class CertificateController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         CertificateService.DownloadFile download = certificateService.download(certificateId, principal);
+        return buildFileResponse(download, "attachment");
+    }
+
+    @GetMapping("/certificates/{certificateId}/preview")
+    public ResponseEntity<Resource> preview(
+            @PathVariable UUID certificateId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        CertificateService.DownloadFile download = certificateService.download(certificateId, principal);
+        return buildFileResponse(download, "inline");
+    }
+
+    private ResponseEntity<Resource> buildFileResponse(CertificateService.DownloadFile download, String dispositionType) {
         String encodedName = URLEncoder.encode(download.certificate().getOriginalName(), StandardCharsets.UTF_8)
                 .replace("+", "%20");
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(download.certificate().getContentType()))
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encodedName)
+                .header(HttpHeaders.CONTENT_DISPOSITION, dispositionType + "; filename*=UTF-8''" + encodedName)
+                .header(HttpHeaders.CACHE_CONTROL, "private, max-age=300")
                 .body(download.resource());
     }
 }

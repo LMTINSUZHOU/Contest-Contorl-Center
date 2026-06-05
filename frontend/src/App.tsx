@@ -1,4 +1,5 @@
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -84,9 +85,111 @@ async function downloadApi(path: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+async function fetchCertificatePreview(certificateId: string): Promise<{ url: string; contentType: string; blob: Blob; filename: string }> {
+  const headers = new Headers();
+  if (token()) {
+    headers.set('Authorization', `Bearer ${token()}`);
+  }
+  const response = await fetch(`${API_BASE}/api/certificates/${certificateId}/preview`, { headers });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({ message: response.statusText }));
+    throw new Error(payload.message ?? response.statusText);
+  }
+  const blob = await response.blob();
+  const contentType = response.headers.get('Content-Type') ?? blob.type ?? 'application/octet-stream';
+  const disposition = response.headers.get('Content-Disposition') ?? '';
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
+  const filename = match ? decodeURIComponent(match[1]) : 'certificate';
+  return { url: URL.createObjectURL(blob), contentType, blob, filename };
+}
+
+function CertificatePreviewModal({ certificateId, originalName, onClose }: { certificateId: string; originalName?: string; onClose: () => void }) {
+  const [state, setState] = useState<
+    | { status: 'loading' }
+    | { status: 'ready'; url: string; contentType: string; blob: Blob; filename: string }
+    | { status: 'error'; message: string }
+  >({ status: 'loading' });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchCertificatePreview(certificateId)
+      .then(result => {
+        if (cancelled) {
+          URL.revokeObjectURL(result.url);
+          return;
+        }
+        setState({ status: 'ready', ...result });
+      })
+      .catch(err => {
+        if (!cancelled) setState({ status: 'error', message: err instanceof Error ? err.message : '加载证书失败' });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [certificateId]);
+
+  useEffect(() => {
+    return () => {
+      if (state.status === 'ready') URL.revokeObjectURL(state.url);
+    };
+  }, [state]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const title = state.status === 'ready' ? state.filename : (originalName ?? '证书预览');
+  const isImage = state.status === 'ready' && state.contentType.startsWith('image/');
+  const isPdf = state.status === 'ready' && state.contentType === 'application/pdf';
+
+  const handleDownload = () => {
+    if (state.status !== 'ready') return;
+    const url = URL.createObjectURL(state.blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = state.filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return createPortal(
+    <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="modal-panel preview-panel" role="dialog" aria-modal="true" aria-label={title}>
+        <header className="modal-header">
+          <h2 className="preview-title" title={title}>{title}</h2>
+          <div className="preview-actions">
+            {state.status === 'ready' && (
+              <button type="button" onClick={handleDownload}>下载</button>
+            )}
+            <button type="button" className="ghost" onClick={onClose} aria-label="关闭预览">关闭</button>
+          </div>
+        </header>
+        <div className="preview-body">
+          {state.status === 'loading' && <div className="loading">加载中...</div>}
+          {state.status === 'error' && <div className="error-text">预览失败：{state.message}</div>}
+          {state.status === 'ready' && isImage && <img className="preview-image" src={state.url} alt={title} />}
+          {state.status === 'ready' && isPdf && <iframe className="preview-iframe" src={state.url} title={title} />}
+          {state.status === 'ready' && !isImage && !isPdf && (
+            <div className="preview-unsupported">
+              <p>该文件类型（{state.contentType}）暂不支持在线预览，请使用下载按钮保存后查看。</p>
+              <button type="button" onClick={handleDownload}>下载证书</button>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
 function App() {
   const [user, setUser] = useState<UserView | null>(null);
   const [message, setMessage] = useState('');
+  const [previewing, setPreviewing] = useState<{ certificateId: string; originalName?: string } | null>(null);
 
   useEffect(() => {
     if (!token()) return;
@@ -115,10 +218,18 @@ function App() {
         <button className="ghost" onClick={logout}>退出登录</button>
       </aside>
       <main className="workspace">
-        {user.role === 'ADMIN' && <AdminWorkspace />}
-        {user.role === 'STUDENT' && <StudentWorkspace />}
-        {user.role === 'TEACHER' && <TeacherWorkspace />}
+        {user.role === 'ADMIN' && <AdminWorkspace onPreview={(id, name) => setPreviewing({ certificateId: id, originalName: name })} />}
+        {user.role === 'STUDENT' && <StudentWorkspace onPreview={(id, name) => setPreviewing({ certificateId: id, originalName: name })} />}
+        {user.role === 'TEACHER' && <TeacherWorkspace onPreview={(id, name) => setPreviewing({ certificateId: id, originalName: name })} />}
       </main>
+      {previewing && createPortal(
+        <CertificatePreviewModal
+          certificateId={previewing.certificateId}
+          originalName={previewing.originalName}
+          onClose={() => setPreviewing(null)}
+        />,
+        document.body
+      )}
     </div>
   );
 }
@@ -185,7 +296,7 @@ function AuthPage({ onLogin, message, setMessage }: { onLogin: (user: UserView) 
   );
 }
 
-function AdminWorkspace() {
+function AdminWorkspace({ onPreview }: { onPreview?: (certificateId: string, originalName?: string) => void }) {
   const tabs = ['首页', '用户审核', '学生', '教师', '竞赛', '团队', '获奖', '导入导出'];
   const [tab, setTab] = useState(tabs[0]);
   return (
@@ -197,7 +308,7 @@ function AdminWorkspace() {
       {tab === '教师' && <ProfileManager type="teachers" />}
       {tab === '竞赛' && <CompetitionManager />}
       {tab === '团队' && <TeamManager />}
-      {tab === '获奖' && <AwardManager />}
+      {tab === '获奖' && <AwardManager onPreview={onPreview} />}
       {tab === '导入导出' && <ImportExportPanel />}
     </>
   );
@@ -445,7 +556,7 @@ function TeamManager() {
   );
 }
 
-function AwardManager() {
+function AwardManager({ onPreview }: { onPreview?: (certificateId: string, originalName?: string) => void }) {
   const [awards, setAwards] = useState<AwardView[]>([]);
   const [competitions, setCompetitions] = useState<Entity[]>([]);
   const [tracks, setTracks] = useState<Entity[]>([]);
@@ -559,7 +670,7 @@ function AwardManager() {
           </div>
         </form>
       </Modal>
-      <AwardTable rows={awards} onCertificateUpload={uploadCertificate} actions={row => (
+      <AwardTable rows={awards} onCertificateUpload={uploadCertificate} onPreview={(id, name) => { if (onPreview) onPreview(id, name); }} actions={row => (
         <>
           <button onClick={() => editAward(row)}>编辑</button>
           <button className="danger" onClick={() => deleteAward(row.id)}>删除</button>
@@ -595,7 +706,7 @@ function ImportExportPanel() {
   );
 }
 
-function StudentWorkspace() {
+function StudentWorkspace({ onPreview }: { onPreview?: (certificateId: string, originalName?: string) => void }) {
   const [profile, setProfile] = useState<Entity | null>(null);
   const [awards, setAwards] = useState<AwardView[]>([]);
   const [declarations, setDeclarations] = useState<AwardView[]>([]);
@@ -699,9 +810,9 @@ function StudentWorkspace() {
         </form>
       </Modal>
       <h2>历史获奖</h2>
-      <AwardTable rows={awards} />
+      <AwardTable rows={awards} onPreview={(id, name) => onPreview?.(id, name)} />
       <h2>申报/可维护记录</h2>
-      <AwardTable rows={declarations} actions={row => (
+      <AwardTable rows={declarations} onPreview={(id, name) => onPreview?.(id, name)} actions={row => (
         <>
           <button onClick={() => editDeclaration(row)}>编辑</button>
           <button className="danger" onClick={() => deleteDeclaration(row.id)}>删除</button>
@@ -711,7 +822,7 @@ function StudentWorkspace() {
   );
 }
 
-function TeacherWorkspace() {
+function TeacherWorkspace({ onPreview }: { onPreview?: (certificateId: string, originalName?: string) => void }) {
   const [profile, setProfile] = useState<Entity | null>(null);
   const [awards, setAwards] = useState<AwardView[]>([]);
   const [declarations, setDeclarations] = useState<AwardView[]>([]);
@@ -732,14 +843,14 @@ function TeacherWorkspace() {
       <Header title="指导老师主页" />
       <section className="panel"><strong>{profile?.name}</strong> {profile?.teacherNo} {profile?.college} {profile?.title}</section>
       <h2>待审核申报</h2>
-      <AwardTable rows={declarations} actions={row => (
+      <AwardTable rows={declarations} onPreview={(id, name) => onPreview?.(id, name)} actions={row => (
         <>
           <button onClick={() => audit(row.id, 'approve')}>通过</button>
           <button className="danger" onClick={() => audit(row.id, 'reject')}>驳回</button>
         </>
       )} />
       <h2>指导与获奖记录</h2>
-      <AwardTable rows={awards} />
+      <AwardTable rows={awards} onPreview={(id, name) => onPreview?.(id, name)} />
     </>
   );
 }
@@ -891,7 +1002,7 @@ function SimpleTable({ rows, title, actions }: { rows: Entity[]; title?: string;
   );
 }
 
-function AwardTable({ rows, actions, onCertificateUpload }: { rows: AwardView[]; actions?: (row: AwardView) => any; onCertificateUpload?: (awardId: string, file?: File) => void }) {
+function AwardTable({ rows, actions, onCertificateUpload, onPreview }: { rows: AwardView[]; actions?: (row: AwardView) => any; onCertificateUpload?: (awardId: string, file?: File) => void; onPreview?: (certificateId: string, originalName?: string) => void }) {
   const [query, setQuery] = useState('');
   const filteredRows = useMemo(() => filterTableRows(rows, query), [rows, query]);
   return (
@@ -909,7 +1020,9 @@ function AwardTable({ rows, actions, onCertificateUpload }: { rows: AwardView[];
           <td>{row.studentName || row.teacherName || row.teamName}</td><td>{row.awardDate || ''}</td><td>{row.awardLocation || ''}</td><td>{row.auditStatusLabel}</td>
           <td>
             <div className="certificate-actions">
-              {row.certificateId ? <button onClick={() => downloadApi(`/api/certificates/${row.certificateId}/download`, 'certificate')}>下载</button> : <span>无</span>}
+              {row.certificateId
+                ? <button onClick={() => onPreview?.(row.certificateId!, row.competitionName ? `${row.competitionName} 证书` : undefined)}>预览</button>
+                : <span>无</span>}
               {onCertificateUpload && (
                 <label className="file-control">
                   导入证书
